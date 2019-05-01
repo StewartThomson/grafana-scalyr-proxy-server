@@ -12,6 +12,7 @@ use Adknown\ProxyScalyr\Grafana\Request\Target;
 use Adknown\ProxyScalyr\Grafana\Response\Query\TimeSeriesTarget;
 use Adknown\ProxyScalyr\Scalyr\ComplexExpressions\Parser;
 use Adknown\ProxyScalyr\Scalyr\Request\Numeric;
+use Adknown\ProxyScalyr\Scalyr\Request\PowerQuery;
 use Adknown\ProxyScalyr\Scalyr\Request\TimeSeriesQuery;
 use Adknown\ProxyScalyr\Scalyr\Response\FacetResponse;
 use Adknown\ProxyScalyr\Scalyr\Response\NumericResponse;
@@ -32,7 +33,8 @@ class Middleware
 	const QUERY_TYPES = [
 		'numeric query'         => 0,
 		'facet query'           => 0,
-		'complex numeric query' => 0
+		'complex numeric query' => 0,
+        'power query'           => 0,
 	];
 
 	public function __construct(bool $useNumeric)
@@ -246,6 +248,16 @@ class Middleware
 		return $target;
 	}
 
+	private function GetPowerQueryTarget($request, $queryData)
+    {
+        $start = $request->range->GetFromAsTimestamp();
+        $end = $request->range->GetToAsTimestamp();
+
+        return $this->api->PowerQuery(
+            new PowerQuery($queryData->filter, $start, $end)
+        );
+    }
+
 	/**
 	 * @param \Adknown\ProxyScalyr\Grafana\Request\TimeSeries $request
 	 *
@@ -284,6 +296,12 @@ class Middleware
 					break;
 				case 'facet query':
 					throw new \Exception("facet queries not yet implemented");
+					break;
+                case 'power query':
+
+                    //TODO: Find out if data should be returned as graph or table
+                    $grafResponse->AddTarget($this->GetPowerQueryTarget($request, $queryData));
+                    break;
 				default:
 					throw new \Exception("Unsupported query type: " . $queryData->type);
 			}

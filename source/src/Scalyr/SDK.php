@@ -10,9 +10,11 @@ namespace Adknown\ProxyScalyr\Scalyr;
 
 
 use Adknown\ProxyScalyr\Scalyr\Request\Numeric;
+use Adknown\ProxyScalyr\Scalyr\Request\PowerQuery;
 use Adknown\ProxyScalyr\Scalyr\Request\TimeSeriesQuery;
 use Adknown\ProxyScalyr\Scalyr\Response\FacetResponse;
 use Adknown\ProxyScalyr\Scalyr\Response\NumericResponse;
+use Adknown\ProxyScalyr\Scalyr\Response\PowerResponse;
 use Adknown\ProxyScalyr\Scalyr\Response\TimeSeriesResponse;
 use \Exception;
 use GuzzleHttp\Client;
@@ -190,4 +192,26 @@ class SDK
 
 		return new FacetResponse($body);
 	}
+
+	public function PowerQuery(PowerQuery $request)
+    {
+        $url = self::BASE_API_URL . "/powerQuery";
+        $body = [
+            "token" => $this->readConfigKey,
+            "query" => $request->query,
+            "startTime" => $request->startTime,
+            "endTime"   => $request->endTime,
+            "priority"  => $request->priority
+        ];
+
+        $response = $this->client->request("POST", $url, [
+            'json' => $body,
+            'headers' => [
+                'Content-Type' => 'application/json',
+                'cache-control' => 'no-cache'
+            ]
+        ]);
+
+        return new PowerResponse($response->getBody()->getContents());
+    }
 }
