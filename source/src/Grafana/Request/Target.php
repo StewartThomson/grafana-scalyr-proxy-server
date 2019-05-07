@@ -50,4 +50,7 @@ class Target
 	public $target;
 	public $type;
 	public $expression;
+
+	/** @var bool whether a power query should attempt to be returned as a time series, or a table */
+	public $powerQueryTimeSeries;
 }

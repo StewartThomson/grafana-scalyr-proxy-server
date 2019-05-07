@@ -16,6 +16,7 @@ use Adknown\ProxyScalyr\Scalyr\Request\PowerQuery;
 use Adknown\ProxyScalyr\Scalyr\Request\TimeSeriesQuery;
 use Adknown\ProxyScalyr\Scalyr\Response\FacetResponse;
 use Adknown\ProxyScalyr\Scalyr\Response\NumericResponse;
+use Adknown\ProxyScalyr\Scalyr\Response\PowerResponse;
 use Adknown\ProxyScalyr\Scalyr\SDK;
 
 class Middleware
@@ -36,6 +37,9 @@ class Middleware
 		'complex numeric query' => 0,
         'power query'           => 0,
 	];
+
+	//Used for fixing the timestamp value sometimes returned for power queries
+	const TIME_STAMP_DIVISOR = 1000000;
 
 	public function __construct(bool $useNumeric)
 	{
@@ -248,14 +252,20 @@ class Middleware
 		return $target;
 	}
 
+	/**
+	 * @param \Adknown\ProxyScalyr\Grafana\Request\TimeSeries $request
+	 * @param \Adknown\ProxyScalyr\Grafana\Request\Target     $queryData
+	 *
+	 * @return []TimeSeriesTarget - The target to send in the Grafana response
+	 */
 	private function GetPowerQueryTarget($request, $queryData)
     {
         $start = $request->range->GetFromAsTimestamp();
         $end = $request->range->GetToAsTimestamp();
 
-        return $this->api->PowerQuery(
+        return self::ConvertScalyrPowerToGrafana($this->api->PowerQuery(
             new PowerQuery($queryData->filter, $start, $end)
-        );
+        ), $queryData->powerQueryTimeSeries);
     }
 
 	/**
@@ -298,9 +308,11 @@ class Middleware
 					throw new \Exception("facet queries not yet implemented");
 					break;
                 case 'power query':
-
-                    //TODO: Find out if data should be returned as graph or table
-                    $grafResponse->AddTarget($this->GetPowerQueryTarget($request, $queryData));
+                	$formattedResponse = $this->GetPowerQueryTarget($request, $queryData);
+                	foreach($formattedResponse as $res)
+					{
+						$grafResponse->AddTarget($res);
+					}
                     break;
 				default:
 					throw new \Exception("Unsupported query type: " . $queryData->type);
@@ -380,5 +392,65 @@ class Middleware
 		}
 
 		return new TimeSeriesTarget($target, $datapoints);
+	}
+
+	public static function ConvertScalyrPowerToGrafana(PowerResponse $response, $timeSeries)
+	{
+		switch($timeSeries)
+		{
+			case true:
+				return self::TimeSeriesPowerToGrafana($response);
+				break;
+			case false:
+			default:
+				return self::NonTimeSeriesPowerToGrafana($response);
+		}
+	}
+
+	public static function NonTimeSeriesPowerToGrafana(PowerResponse $response)
+	{
+		$targets = [];
+		for($i = 0; $i < count($response->columns); $i++)
+		{
+			$fn = function($n) use ($i, &$count) {
+				return [$n[$i], $count++];
+			};
+			if($response->columns[$i]["name"] === "timestamp")
+			{
+				$divisor = self::TIME_STAMP_DIVISOR;
+				$fn = function($n) use ($i, &$count, $divisor) {
+					return [$n[$i]/$divisor, $count++];
+				};
+			}
+			$count = 0;
+
+			$targets[] = new TimeSeriesTarget($response->columns[$i]["name"], array_map($fn, $response->values));
+		}
+
+		return $targets;
+	}
+
+	public static function TimeSeriesPowerToGrafana(PowerResponse $response)
+	{
+		$tsKey = array_search("timestamp", array_column($response->columns, "name"));
+		if($tsKey === false)
+		{
+			return self::NonTimeSeriesPowerToGrafana($response);
+		}
+		$targets = [];
+		for($i = 0; $i < count($response->columns); $i++)
+		{
+			if($i === $tsKey)
+			{
+				continue;
+			}
+			$fn = function($n) use ($i, $tsKey) {
+				return [$n[$i], $n[$tsKey]/self::TIME_STAMP_DIVISOR];
+			};
+
+			$targets[] = new TimeSeriesTarget($response->columns[$i]["name"], array_map($fn, $response->values));
+		}
+
+		return $targets;
 	}
 }
